@@ -1,0 +1,17 @@
+{
+  "name": "taskio-whatsapp-api",
+  "version": "1.0.0",
+  "description": "Cliente JavaScript para a API de WhatsApp do Taskio (envio de texto, mídia, agendamentos, conversas, contatos e grupos)",
+  "main": "taskio-whatsapp.js",
+  "types": "taskio-whatsapp.d.ts",
+  "files": [
+    "taskio-whatsapp.js",
+    "taskio-whatsapp.d.ts",
+    "openapi.yaml"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["taskio", "whatsapp", "api", "sdk"],
+  "license": "MIT"
+}
