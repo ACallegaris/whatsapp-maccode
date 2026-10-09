@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-connect",
+  "name": "whatsapp-maccode",
   "version": "2.0.0",
   "description": "Módulo WhatsApp autônomo para Node.js: QR Code no próprio sistema, envio de texto e mídia, recebimento de mensagens e mensagens automáticas de aniversário",
   "main": "whatsapp.js",

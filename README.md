@@ -1,4 +1,4 @@
-# WhatsApp Connect
+# WhatsApp MacCode
 
 Módulo WhatsApp **autônomo** para Node.js. Coloque o arquivo `whatsapp.js` no seu sistema e ele passa a:
 
@@ -14,7 +14,7 @@ Não depende de nenhum servidor externo: conecta direto ao WhatsApp usando [Bail
 Requer Node.js 18+.
 
 ```bash
-npm install github:ACallegaris/taskio-whatsapp-api
+npm install github:ACallegaris/whatsapp-maccode
 ```
 
 Ou copie `whatsapp.js` para o seu projeto e instale as três bibliotecas:
@@ -26,7 +26,7 @@ npm install @whiskeysockets/baileys@6.7.23 qrcode pino
 ## Conectar e gerar o QR Code
 
 ```js
-const { WhatsAppClient } = require('whatsapp-connect');
+const { WhatsAppClient } = require('whatsapp-maccode');
 
 const wa = new WhatsAppClient({ sessionDir: './whatsapp-session' });
 
@@ -106,7 +106,7 @@ Responda sempre usando `msg.chatId`: contatos novos no WhatsApp podem vir identi
 ## Mensagens de aniversário
 
 ```js
-const { BirthdayScheduler } = require('whatsapp-connect');
+const { BirthdayScheduler } = require('whatsapp-maccode');
 
 const aniversarios = new BirthdayScheduler({
   client: wa,
