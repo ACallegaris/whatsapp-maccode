@@ -1,17 +1,21 @@
 {
-  "name": "taskio-whatsapp-api",
-  "version": "1.0.0",
-  "description": "Cliente JavaScript para a API de WhatsApp do Taskio (envio de texto, mídia, agendamentos, conversas, contatos e grupos)",
-  "main": "taskio-whatsapp.js",
-  "types": "taskio-whatsapp.d.ts",
+  "name": "whatsapp-connect",
+  "version": "2.0.0",
+  "description": "Módulo WhatsApp autônomo para Node.js: QR Code no próprio sistema, envio de texto e mídia, recebimento de mensagens e mensagens automáticas de aniversário",
+  "main": "whatsapp.js",
+  "types": "whatsapp.d.ts",
   "files": [
-    "taskio-whatsapp.js",
-    "taskio-whatsapp.d.ts",
-    "openapi.yaml"
+    "whatsapp.js",
+    "whatsapp.d.ts"
   ],
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["taskio", "whatsapp", "api", "sdk"],
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.23",
+    "pino": "^8.21.0",
+    "qrcode": "^1.5.4"
+  },
+  "keywords": ["whatsapp", "baileys", "qrcode", "aniversario", "birthday"],
   "license": "MIT"
 }

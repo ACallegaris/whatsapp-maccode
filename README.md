@@ -1,141 +1,189 @@
-# Taskio WhatsApp API
+# WhatsApp Connect
 
-Cliente JavaScript (arquivo único, sem dependências) e documentação da API de WhatsApp do **Taskio**, para integrar outros sistemas: enviar mensagens e arquivos, agendar envios, ler conversas, contatos e grupos do número conectado.
+Módulo WhatsApp **autônomo** para Node.js. Coloque o arquivo `whatsapp.js` no seu sistema e ele passa a:
 
-- `taskio-whatsapp.js` — cliente pronto para uso (Node.js 18+ ou navegador)
-- `taskio-whatsapp.d.ts` — tipos TypeScript
-- `openapi.yaml` — especificação OpenAPI 3 (importe no Postman, Insomnia, Swagger UI ou gere clientes em outras linguagens)
-- `examples/exemplo.js` — exemplo completo
+- gerar o **QR Code** para conectar o número (imagem PNG, data URL, SVG, terminal ou uma página HTML pronta);
+- enviar **texto, imagem, documento, áudio e vídeo**;
+- receber mensagens (evento `message`);
+- enviar **mensagens de aniversário** automaticamente, uma vez por dia, no horário configurado.
 
-## Pré-requisitos
-
-1. Um número de WhatsApp conectado ao Taskio (menu **WhatsApp → Conexão**, leitura do QR Code).
-2. Uma **chave de API** da organização, gerada no Taskio (`sk-taskio-...`). A chave dá acesso apenas à organização em que foi criada.
-3. O **ID da organização** (ex.: `ORG-123456`).
-
-> Mantenha a chave no servidor (variável de ambiente). Não a coloque em código que roda no navegador do usuário final.
+Não depende de nenhum servidor externo: conecta direto ao WhatsApp usando [Baileys](https://github.com/WhiskeySockets/Baileys), como um "aparelho conectado" do celular.
 
 ## Instalação
 
-Copie `taskio-whatsapp.js` para o seu projeto, ou instale direto do GitHub:
+Requer Node.js 18+.
 
 ```bash
 npm install github:ACallegaris/taskio-whatsapp-api
 ```
 
-## Uso rápido
+Ou copie `whatsapp.js` para o seu projeto e instale as três bibliotecas:
+
+```bash
+npm install @whiskeysockets/baileys@6.7.23 qrcode pino
+```
+
+## Conectar e gerar o QR Code
 
 ```js
-const { TaskioWhatsApp } = require('taskio-whatsapp-api'); // ou require('./taskio-whatsapp')
+const { WhatsAppClient } = require('whatsapp-connect');
 
-const wa = new TaskioWhatsApp({
-  apiKey: process.env.TASKIO_API_KEY, // sk-taskio-...
-  orgId:  process.env.TASKIO_ORG_ID,  // ORG-123456
+const wa = new WhatsAppClient({ sessionDir: './whatsapp-session' });
+
+wa.on('qr', ({ dataUrl }) => {
+  // dataUrl = "data:image/png;base64,..." — use direto em <img src="...">
 });
+wa.on('ready', ({ phone }) => console.log('Conectado:', phone));
 
-// Texto
-await wa.sendText({ phone: '11999998888', text: 'Olá! Seu pedido saiu para entrega.' });
+await wa.connect();
+```
 
-// Arquivo (Buffer → multipart, até 50 MB)
-await wa.sendMedia({
-  phone: '11999998888',
-  mediaType: 'document',            // image | document | audio | video
-  media: fs.readFileSync('boleto.pdf'),
+O QR muda a cada ~20 segundos enquanto ninguém o lê; o evento `qr` dispara a cada troca. Depois de conectado, a sessão fica salva em `sessionDir` e as próximas inicializações conectam sozinhas, sem novo QR.
+
+### Formatos do QR Code
+
+```js
+await wa.getQr('dataUrl');   // "data:image/png;base64,..."  → <img src>
+await wa.getQr('png');       // Buffer PNG                   → resposta HTTP image/png
+await wa.getQr('svg');       // "<svg ...>"                  → inserir no HTML
+await wa.getQr('terminal');  // QR em texto para console.log
+await wa.getQr('raw');       // conteúdo bruto do QR
+await wa.qrPage();           // página HTML completa, atualiza sozinha até conectar
+```
+
+Retornam `null` quando não há QR pendente (já conectado ou ainda iniciando). Use `wa.getState()` para saber o status.
+
+Exemplo de rota (Express):
+
+```js
+app.get('/whatsapp/qr', async (req, res) => res.type('html').send(await wa.qrPage()));
+app.get('/whatsapp/status', (req, res) => res.json(wa.getState()));
+```
+
+### Conectar por código (sem câmera)
+
+```js
+await wa.connect();
+const codigo = await wa.requestPairingCode('11999998888');
+```
+
+No celular: **WhatsApp → Aparelhos conectados → Conectar com número de telefone** e digite o código.
+
+## Enviar mensagens
+
+```js
+await wa.sendText('11999998888', 'Olá!');
+
+await wa.sendMedia('11999998888', {
+  type: 'document',          // image | document | audio | video
+  data: './boleto.pdf',      // caminho, Buffer, base64 ou data URL
   mimeType: 'application/pdf',
-  fileName: 'boleto.pdf',
   caption: 'Segue seu boleto',
 });
 
-// Agendamento
-await wa.createSchedule({
-  sendAt: '2026-10-10T14:00:00-03:00',
-  text: 'Lembrete: reunião às 15h',
-  recipients: ['11999998888', '120363000000000000@g.us'],
+await wa.sendText('120363000000000000@g.us', 'Mensagem para o grupo');
+```
+
+Telefones brasileiros sem DDI (10 ou 11 dígitos) recebem `55` automaticamente; para outro país, passe `defaultCountry` no construtor ou envie o número com DDI. Antes de enviar, o módulo confirma se o número tem WhatsApp; se não tiver, o envio lança erro.
+
+Os envios entram numa fila: há um intervalo aleatório entre mensagens e o status "digitando..." é exibido antes de cada uma, para o número não ser tratado como robô. Para desligar, use `humanize: false`.
+
+## Receber mensagens
+
+```js
+wa.on('message', async (msg) => {
+  if (msg.fromMe || msg.isGroup) return;
+  console.log(msg.name, msg.phone, msg.type, msg.text);
+  if (msg.type !== 'text') {
+    const arquivo = await wa.downloadMedia(msg); // Buffer
+  }
+  await wa.sendText(msg.chatId, 'Recebemos sua mensagem!');
 });
 ```
 
-Em ESM: `import { TaskioWhatsApp } from 'taskio-whatsapp-api';`
+Responda sempre usando `msg.chatId`: contatos novos no WhatsApp podem vir identificados como `...@lid`, sem telefone.
 
-### Destinatários
-
-| Formato | Exemplo | Observação |
-|---|---|---|
-| Telefone | `11999998888`, `+55 (11) 99999-8888` | Números BR com 10/11 dígitos recebem DDI `55` automaticamente |
-| Grupo | `120363000000000000@g.us` | IDs obtidos em `listGroups()` |
-| Contato LID | `123456789012345@lid` | Contatos sem telefone conhecido |
-| Conversa | `conversationId` | Responde numa conversa existente do Taskio e grava a mensagem no histórico |
-
-Envios sem `conversationId` são registrados como envio avulso (histórico em `listCampaigns()`).
-
-## Métodos
-
-| Método | HTTP | Descrição |
-|---|---|---|
-| `sendText({ phone \| conversationId, text, campaignId? })` | `POST /api/whatsapp/send` | Envia texto |
-| `sendMedia({ phone \| conversationId, mediaType, media, mimeType?, fileName?, caption? })` | `POST /api/whatsapp/send-media` | Envia imagem, documento, áudio ou vídeo |
-| `listConversations({ limit? })` | `GET /api/whatsapp/conversations/{orgId}` | Últimas conversas (máx. 100) |
-| `listMessages(conversationId)` | `GET /api/whatsapp/messages/{conversationId}` | Mensagens da conversa (até 200); marca como lida |
-| `downloadMedia(messageId)` | `GET /api/whatsapp/media/{orgId}/{messageId}` | Baixa a mídia de uma mensagem |
-| `listContacts()` | `GET /api/whatsapp/contacts/{orgId}` | Agenda do número conectado |
-| `syncContacts()` | `POST /api/whatsapp/contacts/{orgId}/sync` | Força a sincronização da agenda |
-| `listGroups({ force? })` | `GET /api/whatsapp/groups/{orgId}` | Grupos do número |
-| `listCampaigns()` | `GET /api/whatsapp/campanhas/{orgId}` | Histórico de envios avulsos (máx. 500) |
-| `listSchedules()` | `GET /api/whatsapp/agendamentos/{orgId}` | Agendamentos (máx. 300) |
-| `createSchedule({ sendAt, text?, recipients, attachment? })` | `POST /api/whatsapp/agendamentos/{orgId}` | Cria agendamento (até 500 destinatários) |
-| `cancelSchedule(id)` | `POST /api/whatsapp/agendamentos/{orgId}/{id}/cancelar` | Cancela um agendamento pendente |
-| `deleteSchedule(id)` | `DELETE /api/whatsapp/agendamentos/{orgId}/{id}` | Exclui um agendamento que não esteja pendente/enviando |
-
-Status de agendamento: `pendente` → `enviando` → `enviado` \| `parcial` \| `falhou`, ou `cancelado`. O resultado por destinatário fica em `resultados[]`.
-
-## Erros
-
-Toda resposta não-2xx lança `TaskioApiError` com `status` (HTTP) e `message` (texto do servidor):
+## Mensagens de aniversário
 
 ```js
-const { TaskioApiError } = require('taskio-whatsapp-api');
-try {
-  await wa.sendText({ phone: '11999998888', text: 'Oi' });
-} catch (e) {
-  if (e instanceof TaskioApiError && e.status === 401) console.error('Chave inválida ou revogada');
-  else throw e;
-}
+const { BirthdayScheduler } = require('whatsapp-connect');
+
+const aniversarios = new BirthdayScheduler({
+  client: wa,
+  getPeople: async () => db.query('SELECT nome, telefone, nascimento FROM clientes'),
+  message: 'Feliz aniversário, {primeiroNome}! 🎉 Desejamos um dia incrível.',
+  sendAt: '09:00',
+  timeZone: 'America/Sao_Paulo',
+});
+
+aniversarios.on('sent', ({ person }) => console.log('Enviado para', person.nome));
+aniversarios.on('failed', ({ person, error }) => console.log('Falhou', person.nome, error.message));
+aniversarios.start();
 ```
 
-| HTTP | Motivo |
+- **`getPeople`**: função (pode ser `async`) que devolve a lista de pessoas do seu sistema. Cada item precisa de `nome`, `telefone` e `nascimento`. Também são aceitos os nomes `name`, `phone`, `birthday` e `dataNascimento`.
+- **`nascimento`**: aceita `1990-10-09`, `09/10/1990`, `09/10` (sem ano) ou um objeto `Date`.
+- **`message`**: texto com variáveis `{nome}`, `{primeiroNome}`, `{idade}` ou qualquer campo da pessoa (`{empresa}`, por exemplo). Também pode ser uma função: `(p) => \`Parabéns, ${p.primeiroNome}!\``.
+- **`media`** (opcional): envia uma imagem com a mensagem na legenda, por exemplo `{ type: 'image', data: './cartao.png' }`. Também aceita uma função, para gerar um cartão por pessoa.
+- **`sendAt`**: a partir desse horário, o módulo verifica os aniversariantes a cada minuto. Se o sistema estiver desligado ou o WhatsApp desconectado nesse horário, envia assim que voltar, desde que ainda seja o mesmo dia.
+- Cada pessoa recebe **uma única mensagem por dia**. O controle fica em `stateFile` (padrão `./whatsapp-birthdays-sent.json`), então reiniciar o sistema não gera mensagem repetida. Se um envio falhar, ele é tentado de novo na verificação seguinte.
+- Quem nasceu em 29/02 recebe a mensagem em 28/02 nos anos não bissextos.
+- Entre um aniversariante e outro há um intervalo aleatório de 8 a 20 segundos (`minIntervalMs` e `maxIntervalMs`).
+
+Para disparar manualmente ou testar:
+
+```js
+await aniversarios.birthdaysOn(new Date());   // quem faz aniversário hoje
+await aniversarios.runNow();                  // envia agora para os pendentes de hoje
+```
+
+## Referência
+
+### `new WhatsAppClient(opções)`
+
+| Opção | Padrão | Descrição |
+|---|---|---|
+| `sessionDir` | `./whatsapp-session` | Pasta da sessão. **Guarde fora do controle de versão**: quem tiver essa pasta tem acesso ao WhatsApp. |
+| `autoReconnect` | `true` | Reconecta sozinho quando a conexão cai |
+| `reconnectDelayMs` | `5000` | Espera antes de reconectar |
+| `defaultCountry` | `'55'` | DDI adicionado a números sem DDI |
+| `humanize` | `true` | Fila com intervalos e "digitando..." |
+| `logLevel` | `'silent'` | Nível de log interno do Baileys |
+
+| Método | Retorno |
 |---|---|
-| 400 | Parâmetro ausente ou inválido |
-| 401 | Chave de API ausente, inválida ou revogada |
-| 403 | A chave não pertence à organização informada, ou a conversa é de outra organização |
-| 404 | Conversa, mensagem ou agendamento não encontrado |
-| 409 | Operação incompatível com o status do agendamento |
-| 429 | Limite de requisições excedido |
-| 500 | Falha no envio (ex.: WhatsApp desconectado) |
+| `connect()` | Inicia a conexão |
+| `waitForReady(timeoutMs?)` | Resolve quando conectar |
+| `getQr(formato)` / `qrPage()` | QR Code (veja acima) |
+| `requestPairingCode(telefone)` | Código de 8 caracteres |
+| `getState()` | `{ status, connected, phone, hasQr }` |
+| `sendText(para, texto)` | `{ id, to }` |
+| `sendMedia(para, { type, data, mimeType?, fileName?, caption? })` | `{ id, to }` |
+| `isOnWhatsApp(telefone)` | `{ exists, jid, lid }` |
+| `downloadMedia(msg)` | `Buffer` |
+| `getContacts()` | Contatos sincronizados |
+| `getGroups()` | Grupos do número |
+| `logout()` | Desconecta o aparelho e apaga a sessão |
+| `close()` | Fecha a conexão e mantém a sessão |
 
-O servidor já faz até 3 tentativas de envio antes de devolver erro.
+| Evento | Dados |
+|---|---|
+| `qr` | `{ qr, dataUrl }` |
+| `ready` | `{ phone, name }` |
+| `status` | `{ status, connected, phone, hasQr }` |
+| `disconnected` | `{ code, reason: 'connection_lost' \| 'logged_out' \| 'banned', willReconnect }` |
+| `message` | `{ id, chatId, from, phone, name, fromMe, isGroup, type, text, timestamp, raw }` |
 
-## Uso sem o cliente (HTTP direto)
+Status possíveis: `idle`, `connecting`, `qr`, `connected`, `disconnected`, `logged_out`, `banned`.
 
-Autentique com o cabeçalho `Authorization: Bearer sk-taskio-...`.
+Se o número for desconectado pelo celular (`logged_out`), a sessão é apagada e um novo QR é gerado. Se o WhatsApp bloquear o número (`banned`), o módulo **não** tenta reconectar, para não agravar o bloqueio.
 
-```bash
-curl -X POST https://wa.sistemataskio.com.br/api/whatsapp/send \
-  -H "Authorization: Bearer $TASKIO_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"orgId":"ORG-123456","phone":"11999998888","text":"Olá!"}'
+Exemplo completo com servidor HTTP: [`examples/servidor.js`](examples/servidor.js).
 
-curl -X POST https://wa.sistemataskio.com.br/api/whatsapp/send-media \
-  -H "Authorization: Bearer $TASKIO_API_KEY" \
-  -F orgId=ORG-123456 -F phone=11999998888 -F mediaType=document \
-  -F caption="Segue o boleto" -F file=@boleto.pdf
-```
+## Avisos
 
-A especificação completa está em [`openapi.yaml`](openapi.yaml).
-
-## Boas práticas
-
-- Evite disparos em massa para números que não esperam sua mensagem: o WhatsApp pode banir o número. Para listas grandes, prefira `createSchedule`, que espaça os envios automaticamente.
-- Trate `500` com nova tentativa posterior (o número pode estar momentaneamente desconectado).
-- Revogue no Taskio qualquer chave exposta e gere outra.
+- Este módulo usa o WhatsApp Web de forma não oficial. Não é afiliado ao WhatsApp/Meta, e envios em massa para quem não espera sua mensagem podem levar ao bloqueio do número. Envie apenas para contatos que autorizaram.
+- Mantenha um único processo conectado por sessão. Duas instâncias usando a mesma `sessionDir` derrubam uma à outra.
 
 ## Licença
 

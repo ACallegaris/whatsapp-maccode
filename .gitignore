@@ -1,4 +1,5 @@
 node_modules/
 .env
 *.log
-examples/*.pdf
+whatsapp-session/
+whatsapp-birthdays-sent.json
